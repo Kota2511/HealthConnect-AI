@@ -77,7 +77,7 @@ function App() {
   const fetchHospitals = useCallback(async () => {
     try {
       const response = await fetch(
-        'http://127.0.0.1:8000/hospitals'
+        'https://healthconnect-ai-4qgk.onrender.com/hospitals'
       )
 
       if (!response.ok) {
@@ -114,7 +114,7 @@ function App() {
       }
 
       const response = await fetch(
-        'http://127.0.0.1:8000/admin/hospitals',
+        'https://healthconnect-ai-4qgk.onrender.com/admin/hospitals',
         {
           headers: {
             Authorization: `Bearer ${token}`
@@ -351,7 +351,7 @@ function App() {
       }
 
       const response = await fetch(
-        `http://127.0.0.1:8000/hospitals/${editingHospital}`,
+        `https://healthconnect-ai-4qgk.onrender.com/hospitals/${editingHospital}`,
         {
           method: 'PUT',
           headers: {
