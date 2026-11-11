@@ -43,7 +43,7 @@ function AddHospital({ onAdded }) {
       }
 
       const response = await fetch(
-        'http://127.0.0.1:8000/hospitals',
+        'https://healthconnect-ai-4qgk.onrender.com/hospitals',
         {
           method: 'POST',
           headers: {
