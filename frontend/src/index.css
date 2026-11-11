@@ -1,0 +1,48 @@
+
+:root {
+  font-family: Arial, Helvetica, sans-serif;
+  color: #172b4d;
+  background: #f5f8fc;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: #f5f8fc;
+}
+
+#root {
+  width: 100%;
+  max-width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  text-align: left;
+}
+
+button,
+input {
+  font-family: inherit;
+}
+
+a {
+  cursor: pointer;
+}
+
+::selection {
+  background: #b9ddff;
+  color: #123b68;
+}
