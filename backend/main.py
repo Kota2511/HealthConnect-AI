@@ -5,6 +5,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 from typing import Optional
 from database import supabase
+from recommendations import recommend_hospitals
 
 
 app = FastAPI(
@@ -53,6 +54,12 @@ class HospitalUpdate(BaseModel):
     specialty: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+
+# Patient symptom-based hospital recommendation request
+class RecommendationRequest(BaseModel):
+    symptoms: str = Field(min_length=2, max_length=2000)
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180)
 
 
 # Verify Admin Login
@@ -269,4 +276,51 @@ def update_hospital(
         raise HTTPException(
             status_code=500,
             detail="Unable to update hospital. Check backend terminal."
+        )
+
+# Patient: Get symptom-based hospital recommendations
+@app.post("/recommendations")
+def get_recommendations(request: RecommendationRequest):
+    try:
+        # GPS coordinates must be provided together
+        if (
+            (request.latitude is None and request.longitude is not None)
+            or
+            (request.latitude is not None and request.longitude is None)
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Please provide both latitude and longitude."
+            )
+
+        # Fetch verified hospitals only
+        response = (
+            supabase.table("hospitals")
+            .select("*")
+            .eq("is_verified", True)
+            .execute()
+        )
+
+        verified_hospitals = response.data or []
+
+        result = recommend_hospitals(
+            hospitals=verified_hospitals,
+            symptoms=request.symptoms,
+            user_latitude=request.latitude,
+            user_longitude=request.longitude,
+        )
+
+        return {
+            "status": "success",
+            **result
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        print("RECOMMENDATION ERROR:", repr(e))
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to generate hospital recommendations."
         )

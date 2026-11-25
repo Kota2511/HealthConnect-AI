@@ -1,6 +1,9 @@
 
 import { useState } from 'react'
-import { supabase } from './supabase'
+import { supabase } from './supabase' 
+  const API_URL =
+    import.meta.env.VITE_API_URL ||
+    'https://healthconnect-ai-4qgk.onrender.com'
 
 function AddHospital({ onAdded }) {
   const [form, setForm] = useState({
@@ -41,9 +44,8 @@ function AddHospital({ onAdded }) {
       if (!token) {
         throw new Error('Please login again.')
       }
-
       const response = await fetch(
-        'https://healthconnect-ai-4qgk.onrender.com/hospitals',
+        `${API_URL}/hospitals`,
         {
           method: 'POST',
           headers: {

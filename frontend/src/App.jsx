@@ -4,27 +4,24 @@ import './App.css'
 import { supabase } from './supabase'
 import AdminLogin from './AdminLogin'
 import AddHospital from './AddHospital'
+import PatientAuth from './PatientAuth'
 
-// Convert Telugu voice-search words into English search terms
+const API_URL =
+  import.meta.env.VITE_API_URL ||
+  'https://healthconnect-ai-4qgk.onrender.com'
+
 function normalizeSearch(text) {
   let value = String(text || '').toLowerCase().trim()
 
   const replacements = [
-    [/కాకినాడలో|కాకినాడకు|కాకినాడని|కాకినాడ సిటీలో|కాకినాడ/g, ' kakinada '],
-
-    [/హాస్పిటల్స్|హాస్పిటల్|హాస్పిటల్స్ ని|ఆసుపత్రులు|ఆసుపత్రి|వైద్యశాలలు|వైద్యశాల/g, ' '],
-
-    [/చూపించండి|చూపించు|చూపించవా|కనిపించండి|కనిపించు|కావాలి|కావలెను|ఉన్నవి|ఉన్న|లో ఉన్న|లోని|ఎక్కడ|ఏమైనా/g, ' '],
-
-    [/కార్డియాలజిస్టులు|కార్డియాలజిస్ట్|కార్డియాలజీని|కార్డియాలజీ|గుండె వైద్యులు|గుండె వైద్యుడు|గుండె వైద్యం|గుండె సంబంధిత|హృదయ వైద్యం|గుండె/g, ' cardiology '],
-
-    [/న్యూరాలజిస్టులు|న్యూరాలజిస్ట్|న్యూరాలజీని|న్యూరాలజీ|నరాల వైద్యం|నరాల|నరాలు|మెదడు వైద్యం|మెదడు/g, ' neurology '],
-
-    [/ఆర్థోపెడిక్స్|ఆర్థోపెడిక్|ఎముకల వైద్యం|ఎముకల|ఎముకలు|ఎముకల డాక్టర్/g, ' orthopedics '],
-
-    [/నెఫ్రాలజిస్టులు|నెఫ్రాలజిస్ట్|నెఫ్రాలజీ|కిడ్నీ వైద్యం|కిడ్నీ|మూత్రపిండాలు/g, ' nephrology '],
-
-    [/జనరల్ మెడిసిన్|సాధారణ వైద్యం|జనరల్ వైద్యం|సాధారణ వైద్యులు/g, ' general medicine ']
+    [/కాకినాడ|కాకినాడలో|కాకినాడలొ|కాకినాడ లో/g, 'kakinada'],
+    [/ఆసుపత్రులు|హాస్పిటల్స్|హాస్పిటల్|ఆసుపత్రి/g, ''],
+    [/కావాలి|చూపించు|చూపించండి|ఉన్నాయా|ఉన్నవి|దగ్గరలో/g, ''],
+    [/గుండె|హార్ట్/g, 'cardiology'],
+    [/మెదడు|నరాలు|న్యూరో/g, 'neurology'],
+    [/ఎముకలు|ఆర్థో/g, 'orthopedics'],
+    [/కిడ్నీ|మూత్రపిండాలు/g, 'nephrology'],
+    [/జనరల్|సాధారణ/g, 'general medicine']
   ]
 
   replacements.forEach(([pattern, replacement]) => {
@@ -40,8 +37,8 @@ function normalizeSearch(text) {
 function App() {
   const [hospitals, setHospitals] = useState([])
   const [adminHospitals, setAdminHospitals] = useState([])
-
   const [search, setSearch] = useState('')
+
   const [loading, setLoading] = useState(true)
   const [adminLoading, setAdminLoading] = useState(false)
   const [error, setError] = useState('')
@@ -54,11 +51,10 @@ function App() {
 
   const [page, setPage] = useState('home')
   const [adminUser, setAdminUser] = useState(null)
+  const [patientUser, setPatientUser] = useState(null)
   const [checkingSession, setCheckingSession] = useState(true)
 
-  // Edit hospital states
   const [editingHospital, setEditingHospital] = useState(null)
-
   const [editForm, setEditForm] = useState({
     name: '',
     address: '',
@@ -73,237 +69,231 @@ function App() {
   const [editMessage, setEditMessage] = useState('')
   const [editError, setEditError] = useState('')
 
-  // Fetch verified hospitals for public website
   const fetchHospitals = useCallback(async () => {
+    setLoading(true)
+    setError('')
+
     try {
-      const response = await fetch(
-        'https://healthconnect-ai-4qgk.onrender.com/hospitals'
-      )
+      const response = await fetch(`${API_URL}/hospitals`)
 
       if (!response.ok) {
-        throw new Error('Unable to fetch hospitals')
+        throw new Error('Unable to load hospitals')
       }
 
       const data = await response.json()
-
       setHospitals(data.hospitals || [])
-      setError('')
     } catch (err) {
-      console.error(err)
-      setError('Backend connection failed. Please try again.')
+      setError(err.message || 'Failed to load hospitals')
     } finally {
       setLoading(false)
     }
   }, [])
 
-  // Fetch all hospitals for admin dashboard
   const fetchAdminHospitals = useCallback(async () => {
     setAdminLoading(true)
     setAdminError('')
 
     try {
-      const { data, error: sessionError } =
-        await supabase.auth.getSession()
+      const { data: { session } } = await supabase.auth.getSession()
 
-      if (sessionError) throw sessionError
-
-      const token = data.session?.access_token
-
-      if (!token) {
-        throw new Error('Please login again.')
+      if (!session?.access_token) {
+        throw new Error('Admin session not found. Please login again.')
       }
 
-      const response = await fetch(
-        'https://healthconnect-ai-4qgk.onrender.com/admin/hospitals',
-        {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
+      const response = await fetch(`${API_URL}/admin/hospitals`, {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
         }
-      )
+      })
 
-      const result = await response.json()
+      const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(
-          result.detail || 'Unable to load hospitals.'
-        )
+        throw new Error(data.detail || 'Unable to load admin hospitals')
       }
 
-      setAdminHospitals(result.hospitals || [])
+      setAdminHospitals(data.hospitals || [])
     } catch (err) {
-      console.error(err)
-      setAdminError(
-        err.message || 'Unable to load hospital records.'
-      )
+      setAdminError(err.message || 'Failed to load admin hospitals')
     } finally {
       setAdminLoading(false)
     }
   }, [])
 
-  // Load public hospitals
+  // Check whether the active Supabase session belongs to an admin or patient.
+  useEffect(() => {
+    let active = true
+
+    const checkSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+
+        if (!active) return
+
+        if (!session?.user) {
+          setCheckingSession(false)
+          return
+        }
+
+        const user = session.user
+
+        const { data: adminRecord, error: adminCheckError } = await supabase
+          .from('admin_users')
+          .select('*')
+          .eq('id', user.id)
+          .maybeSingle()
+
+        if (!active) return
+
+        if (!adminCheckError && adminRecord) {
+          setAdminUser(user)
+          setPatientUser(null)
+          setPage('dashboard')
+          setCheckingSession(false)
+          return
+        }
+
+        const { data: patientRecord, error: patientCheckError } = await supabase
+          .from('patient_profiles')
+          .select('*')
+          .eq('id', user.id)
+          .maybeSingle()
+
+        if (!active) return
+
+        if (!patientCheckError && patientRecord) {
+          setPatientUser(user)
+          setAdminUser(null)
+          setPage('patient-dashboard')
+        }
+      } catch (err) {
+        console.error('Session check error:', err)
+      } finally {
+        if (active) setCheckingSession(false)
+      }
+    }
+
+    checkSession()
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
+      // Session is checked on initial load and explicit login/logout handlers.
+    })
+
+    return () => {
+      active = false
+      subscription.unsubscribe()
+    }
+  }, [])
+
   useEffect(() => {
     fetchHospitals()
   }, [fetchHospitals])
 
-  // Load admin hospital list when dashboard opens
   useEffect(() => {
     if (page === 'dashboard' && adminUser) {
       fetchAdminHospitals()
     }
   }, [page, adminUser, fetchAdminHospitals])
 
-  // Check existing admin session
-  useEffect(() => {
-    const checkSession = async () => {
-      try {
-        const { data } = await supabase.auth.getSession()
-        const user = data.session?.user
+  const handleAdminLogin = (user) => {
+    setAdminUser(user)
+    setPatientUser(null)
+    setPage('dashboard')
+  }
 
-        if (user) {
-          const { data: admin, error: adminError } =
-            await supabase
-              .from('admin_users')
-              .select('user_id')
-              .eq('user_id', user.id)
-              .maybeSingle()
+  const handleAdminLogout = async () => {
+    await supabase.auth.signOut()
+    setAdminUser(null)
+    setPatientUser(null)
+    setPage('home')
+  }
 
-          if (adminError) throw adminError
+  const handlePatientLogin = (user) => {
+    setPatientUser(user)
+    setAdminUser(null)
+    setPage('patient-dashboard')
+  }
 
-          if (admin) {
-            setAdminUser(user)
-            setPage('dashboard')
-          } else {
-            await supabase.auth.signOut()
-          }
-        }
-      } catch (err) {
-        console.error('Session check failed:', err)
-      } finally {
-        setCheckingSession(false)
-      }
+  const handlePatientLogout = async () => {
+    const { error } = await supabase.auth.signOut()
+
+    if (error) {
+      alert(error.message)
+      return
     }
 
-    checkSession()
-  }, [])
+    setPatientUser(null)
+    setAdminUser(null)
+    setPage('home')
+  }
 
-  // Telugu and English voice search
   const startVoiceSearch = () => {
+    setVoiceError('')
+
     const SpeechRecognition =
-      window.SpeechRecognition ||
-      window.webkitSpeechRecognition
+      window.SpeechRecognition || window.webkitSpeechRecognition
 
     if (!SpeechRecognition) {
-      setVoiceError(
-        'Voice search is not supported. Please use Google Chrome.'
-      )
+      setVoiceError('Voice search is not supported in this browser. Try Chrome.')
       return
     }
 
     const recognition = new SpeechRecognition()
-
     recognition.lang = language
     recognition.continuous = false
     recognition.interimResults = false
-    recognition.maxAlternatives = 1
 
-    recognition.onstart = () => {
-      setIsListening(true)
-      setVoiceError('')
-    }
+    recognition.onstart = () => setIsListening(true)
 
-    recognition.onresult = event => {
+    recognition.onresult = (event) => {
       const transcript = event.results[0][0].transcript
-
       setSearch(transcript)
-      setVoiceError('')
-    }
-
-    recognition.onerror = event => {
-      setVoiceError(
-        event.error === 'not-allowed'
-          ? 'Please allow microphone permission in Chrome.'
-          : 'Voice recognition failed. Please try again.'
-      )
-    }
-
-    recognition.onend = () => {
       setIsListening(false)
     }
 
-    try {
-      recognition.start()
-    } catch {
+    recognition.onerror = (event) => {
+      setVoiceError(`Voice search error: ${event.error}`)
       setIsListening(false)
-      setVoiceError(
-        'Unable to start microphone. Please try again.'
-      )
     }
+
+    recognition.onend = () => setIsListening(false)
+
+    recognition.start()
   }
 
-  // Speak hospital details
-  const speakHospital = hospital => {
-    if (!('speechSynthesis' in window)) {
-      setVoiceError(
-        'Voice output is not supported in this browser.'
-      )
-      return
-    }
+  const speakHospital = (hospital) => {
+    if (!window.speechSynthesis) return
 
     window.speechSynthesis.cancel()
-    setVoiceError('')
 
-    const details = `
-      Hospital name: ${hospital.name}.
-      Address: ${hospital.address}.
-      City: ${hospital.city}.
-      Specialties: ${hospital.specialty || 'Not available'}.
-      Phone number: ${hospital.phone || 'Not available'}.
-    `
+    const message = [
+      hospital.name,
+      hospital.address,
+      hospital.city,
+      hospital.specialty,
+      hospital.phone
+    ].filter(Boolean).join('. ')
 
-    const speech = new SpeechSynthesisUtterance(details)
+    const utterance = new SpeechSynthesisUtterance(message)
+    utterance.lang = 'en-IN'
 
-    speech.lang = 'en-IN'
-    speech.rate = 0.9
-    speech.pitch = 1
+    utterance.onstart = () => setSpeakingId(hospital.id)
+    utterance.onend = () => setSpeakingId(null)
+    utterance.onerror = () => setSpeakingId(null)
 
-    speech.onstart = () => setSpeakingId(hospital.id)
-    speech.onend = () => setSpeakingId(null)
-    speech.onerror = () => setSpeakingId(null)
-
-    window.speechSynthesis.speak(speech)
+    window.speechSynthesis.speak(utterance)
   }
 
-  // Stop voice output
   const stopSpeaking = () => {
-    window.speechSynthesis.cancel()
+    window.speechSynthesis?.cancel()
     setSpeakingId(null)
   }
 
   useEffect(() => {
-    return () => {
-      window.speechSynthesis?.cancel()
-    }
+    return () => window.speechSynthesis?.cancel()
   }, [])
 
-  // Admin login success
-  const handleAdminLogin = user => {
-    setAdminUser(user)
-    setPage('dashboard')
-  }
-
-  // Admin logout
-  const handleAdminLogout = async () => {
-    await supabase.auth.signOut()
-
-    setAdminUser(null)
-    setAdminHospitals([])
-    setEditingHospital(null)
-    setPage('home')
-  }
-
-  // Start editing hospital
-  const startEditing = hospital => {
+  const startEditing = (hospital) => {
     setEditingHospital(hospital.id)
 
     setEditForm({
@@ -320,8 +310,7 @@ function App() {
     setEditError('')
   }
 
-  // Handle edit form changes
-  const handleEditChange = event => {
+  const handleEditChange = (event) => {
     const { name, value } = event.target
 
     setEditForm(previous => ({
@@ -330,83 +319,80 @@ function App() {
     }))
   }
 
-  // Save hospital changes
-  const handleUpdateHospital = async event => {
+  const handleUpdateHospital = async (event) => {
     event.preventDefault()
 
     setEditLoading(true)
-    setEditMessage('')
     setEditError('')
+    setEditMessage('')
 
     try {
-      const { data, error: sessionError } =
-        await supabase.auth.getSession()
+      const { data: { session } } = await supabase.auth.getSession()
 
-      if (sessionError) throw sessionError
+      if (!session?.access_token) {
+        throw new Error('Please login again')
+      }
 
-      const token = data.session?.access_token
-
-      if (!token) {
-        throw new Error('Please login again.')
+      const payload = {
+        ...editForm,
+        latitude: editForm.latitude === '' ? null : Number(editForm.latitude),
+        longitude: editForm.longitude === '' ? null : Number(editForm.longitude)
       }
 
       const response = await fetch(
-        `https://healthconnect-ai-4qgk.onrender.com/hospitals/${editingHospital}`,
+        `${API_URL}/hospitals/${editingHospital}`,
         {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`
+            Authorization: `Bearer ${session.access_token}`
           },
-          body: JSON.stringify({
-            ...editForm,
-            latitude: editForm.latitude === ''
-              ? null
-              : Number(editForm.latitude),
-            longitude: editForm.longitude === ''
-              ? null
-              : Number(editForm.longitude)
-          })
+          body: JSON.stringify(payload)
         }
       )
 
-      const result = await response.json()
+      const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(
-          result.detail || 'Unable to update hospital.'
-        )
+        throw new Error(data.detail || 'Hospital update failed')
       }
 
       setEditMessage('Hospital updated successfully!')
-
-      await fetchAdminHospitals()
-      await fetchHospitals()
-
       setEditingHospital(null)
+
+      await fetchHospitals()
+      await fetchAdminHospitals()
     } catch (err) {
-      console.error(err)
-      setEditError(
-        err.message || 'Unable to update hospital.'
-      )
+      setEditError(err.message || 'Unable to update hospital')
     } finally {
       setEditLoading(false)
     }
   }
 
-  // Loading screen
+  const filteredHospitals = hospitals.filter(hospital => {
+    const query = normalizeSearch(search)
+
+    if (!query) return true
+
+    const hospitalText = normalizeSearch([
+      hospital.name,
+      hospital.city,
+      hospital.specialty,
+      hospital.address
+    ].join(' '))
+
+    return query.split(' ').every(word => hospitalText.includes(word))
+  })
+
   if (checkingSession) {
     return (
-      <div style={{
-        padding: '50px',
-        textAlign: 'center'
-      }}>
-        Checking session...
+      <div className="loading-screen">
+        <h2>HealthConnect AI</h2>
+        <p>Checking your session...</p>
       </div>
     )
   }
 
-  // Admin login page
   if (page === 'login') {
     return (
       <AdminLogin
@@ -416,129 +402,74 @@ function App() {
     )
   }
 
-  // Admin dashboard
-  if (page === 'dashboard' && adminUser) {
-    const verifiedCount = adminHospitals.filter(
-      hospital => hospital.is_verified
-    ).length
+  if (page === 'patient-auth') {
+    return (
+      <PatientAuth
+        onLogin={handlePatientLogin}
+        onBack={() => setPage('home')}
+      />
+    )
+  }
 
-    const pendingCount = adminHospitals.filter(
-      hospital => !hospital.is_verified
-    ).length
-
-    const editInputStyle = {
-      width: '100%',
-      padding: '11px',
-      marginTop: '6px',
-      marginBottom: '13px',
-      border: '1px solid #cbd5e1',
-      borderRadius: '8px',
-      boxSizing: 'border-box'
-    }
+  if (page === 'patient-dashboard' && patientUser) {
+    const patientName =
+      patientUser.user_metadata?.full_name ||
+      patientUser.phone ||
+      patientUser.email ||
+      'Patient'
 
     return (
-      <div style={{
-        minHeight: '100vh',
-        background: '#f1f6fc',
-        padding: '20px'
-      }}>
-        <div style={{
-          maxWidth: '1000px',
-          margin: '30px auto',
-          background: 'white',
-          padding: '30px',
-          borderRadius: '16px',
-          boxShadow: '0 5px 25px rgba(0,0,0,0.08)'
-        }}>
-          <h1 style={{ color: '#147de0' }}>
-            HealthConnect AI
-          </h1>
+      <div className="patient-dashboard">
+        <header className="navbar">
+          <h2>HealthConnect AI</h2>
+          <button onClick={handlePatientLogout}>Logout</button>
+        </header>
 
-          <h2>Admin Dashboard</h2>
-          <p>Welcome, Admin!</p>
-          <p>Email: {adminUser.email}</p>
+        <main className="dashboard-container">
+          <h1>Welcome, {patientName}</h1>
+          <p>You are successfully logged in to HealthConnect AI.</p>
 
-          <hr />
+          <section className="dashboard-card">
+            <h2>Find Hospitals</h2>
+            <p>Search hospitals and healthcare services near you.</p>
+            <button onClick={() => setPage('home')}>
+              Browse Hospitals
+            </button>
+          </section>
+        </main>
+      </div>
+    )
+  }
 
-          <h3>Hospital Management</h3>
+  if (page === 'dashboard' && adminUser) {
+    return (
+      <div className="admin-dashboard">
+        <header className="navbar">
+          <h2>HealthConnect AI Admin</h2>
+          <button onClick={handleAdminLogout}>Logout</button>
+        </header>
 
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-            gap: '15px',
-            marginBottom: '25px'
-          }}>
-            <div style={{
-              padding: '20px',
-              background: '#e5f2ff',
-              borderRadius: '10px'
-            }}>
-              <h2 style={{
-                color: '#147de0',
-                margin: 0
-              }}>
-                {adminLoading ? '...' : adminHospitals.length}
-              </h2>
-              <p>Total Hospitals</p>
+        <main className="dashboard-container">
+          <h1>Admin Dashboard</h1>
+          <p>Welcome, {adminUser.email}</p>
+
+          <div className="dashboard-stats">
+            <div className="stat-card">
+              <h3>{hospitals.length}</h3>
+              <p>Total Public Hospitals</p>
             </div>
-
-            <div style={{
-              padding: '20px',
-              background: '#dcfce7',
-              borderRadius: '10px'
-            }}>
-              <h2 style={{
-                color: '#15803d',
-                margin: 0
-              }}>
-                {adminLoading ? '...' : verifiedCount}
-              </h2>
-              <p>Verified Hospitals</p>
-            </div>
-
-            <div style={{
-              padding: '20px',
-              background: '#fef3c7',
-              borderRadius: '10px'
-            }}>
-              <h2 style={{
-                color: '#b45309',
-                margin: 0
-              }}>
-                {adminLoading ? '...' : pendingCount}
-              </h2>
-              <p>Pending Verification</p>
+            <div className="stat-card">
+              <h3>{adminHospitals.length}</h3>
+              <p>Admin Hospital Records</p>
             </div>
           </div>
 
-          {adminError && (
-            <p style={{ color: 'red' }}>
-              {adminError}
-            </p>
-          )}
+          {adminError && <p className="error-message">{adminError}</p>}
 
-          <button
-            type="button"
-            onClick={() => {
-              fetchAdminHospitals()
-              fetchHospitals()
-            }}
-            style={{
-              padding: '11px 18px',
-              background: '#e5f2ff',
-              color: '#147de0',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              marginBottom: '20px'
-            }}
-          >
-            ↻ Refresh Hospital List
+          <button onClick={fetchAdminHospitals} disabled={adminLoading}>
+            {adminLoading ? 'Refreshing...' : 'Refresh Hospitals'}
           </button>
 
-          <hr />
-
-          {/* Add Hospital Form */}
           <AddHospital
             onAdded={() => {
               fetchHospitals()
@@ -546,500 +477,174 @@ function App() {
             }}
           />
 
-          <hr style={{ margin: '30px 0' }} />
+          <h2>Manage Hospitals</h2>
 
-          {/* Hospital Records */}
-          <h3>All Hospital Records</h3>
+          {adminLoading ? (
+            <p>Loading hospitals...</p>
+          ) : (
+            <div className="hospital-list">
+              {adminHospitals.map(hospital => (
+                <div className="hospital-card" key={hospital.id}>
+                  <h3>{hospital.name}</h3>
+                  <p>{hospital.address}</p>
+                  <p>{hospital.city}</p>
+                  <p>{hospital.phone}</p>
+                  <p>{hospital.specialty}</p>
 
-          <p style={{ color: '#64748b' }}>
-            Edit hospital information and add missing specialties.
-          </p>
-
-          {adminLoading && (
-            <p>Loading hospital records...</p>
+                  <button onClick={() => startEditing(hospital)}>
+                    Edit Hospital
+                  </button>
+                </div>
+              ))}
+            </div>
           )}
 
-          {!adminLoading && adminHospitals.length === 0 && (
-            <p>No hospital records found.</p>
-          )}
+          {editingHospital && (
+            <form onSubmit={handleUpdateHospital} className="edit-form">
+              <h2>Edit Hospital</h2>
 
-          <div style={{
-            display: 'grid',
-            gap: '18px'
-          }}>
-            {adminHospitals.map(hospital => (
-              <div
-                key={hospital.id}
-                style={{
-                  border: '1px solid #dbe3ed',
-                  borderRadius: '12px',
-                  padding: '18px',
-                  background: '#ffffff'
-                }}
+              {Object.keys(editForm).map(field => (
+                <input
+                  key={field}
+                  name={field}
+                  value={editForm[field]}
+                  onChange={handleEditChange}
+                  placeholder={field.charAt(0).toUpperCase() + field.slice(1)}
+                  required={['name', 'address', 'city'].includes(field)}
+                />
+              ))}
+
+              {editError && <p className="error-message">{editError}</p>}
+              {editMessage && <p className="success-message">{editMessage}</p>}
+
+              <button type="submit" disabled={editLoading}>
+                {editLoading ? 'Saving...' : 'Save Changes'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setEditingHospital(null)}
               >
-                {editingHospital === hospital.id ? (
-                  <form onSubmit={handleUpdateHospital}>
-                    <h3 style={{ color: '#147de0' }}>
-                      Edit Hospital
-                    </h3>
-
-                    <label>Hospital Name *</label>
-                    <input
-                      style={editInputStyle}
-                      name="name"
-                      value={editForm.name}
-                      onChange={handleEditChange}
-                      required
-                      minLength={2}
-                    />
-
-                    <label>Address *</label>
-                    <textarea
-                      style={editInputStyle}
-                      name="address"
-                      value={editForm.address}
-                      onChange={handleEditChange}
-                      required
-                      minLength={5}
-                      rows={3}
-                    />
-
-                    <label>City *</label>
-                    <input
-                      style={editInputStyle}
-                      name="city"
-                      value={editForm.city}
-                      onChange={handleEditChange}
-                      required
-                      minLength={2}
-                    />
-
-                    <label>Phone Number</label>
-                    <input
-                      style={editInputStyle}
-                      name="phone"
-                      value={editForm.phone}
-                      onChange={handleEditChange}
-                    />
-
-                    <label>Specialties</label>
-                    <textarea
-                      style={editInputStyle}
-                      name="specialty"
-                      value={editForm.specialty}
-                      onChange={handleEditChange}
-                      rows={4}
-                      placeholder="Example: Cardiology, Neurology, Orthopedics"
-                    />
-
-                    <label>Latitude (Optional)</label>
-                    <input
-                      style={editInputStyle}
-                      type="number"
-                      step="any"
-                      name="latitude"
-                      value={editForm.latitude}
-                      onChange={handleEditChange}
-                    />
-
-                    <label>Longitude (Optional)</label>
-                    <input
-                      style={editInputStyle}
-                      type="number"
-                      step="any"
-                      name="longitude"
-                      value={editForm.longitude}
-                      onChange={handleEditChange}
-                    />
-
-                    {editError && (
-                      <p style={{ color: 'red' }}>
-                        {editError}
-                      </p>
-                    )}
-
-                    <button
-                      type="submit"
-                      disabled={editLoading}
-                      style={{
-                        padding: '11px 18px',
-                        background: '#15803d',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        marginRight: '10px'
-                      }}
-                    >
-                      {editLoading
-                        ? 'Saving...'
-                        : 'Save Changes'}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingHospital(null)
-                        setEditError('')
-                      }}
-                      style={{
-                        padding: '11px 18px',
-                        background: '#e5e7eb',
-                        color: '#111827',
-                        border: 'none',
-                        borderRadius: '8px',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </form>
-                ) : (
-                  <>
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: '10px',
-                      flexWrap: 'wrap'
-                    }}>
-                      <h3 style={{ margin: 0 }}>
-                        {hospital.name}
-                      </h3>
-
-                      <span style={{
-                        padding: '5px 10px',
-                        borderRadius: '20px',
-                        fontSize: '12px',
-                        background: hospital.is_verified
-                          ? '#dcfce7'
-                          : '#fef3c7',
-                        color: hospital.is_verified
-                          ? '#166534'
-                          : '#92400e'
-                      }}>
-                        {hospital.is_verified
-                          ? 'Verified'
-                          : 'Pending Verification'}
-                      </span>
-                    </div>
-
-                    <p>📍 {hospital.address}</p>
-                    <p>🏙️ {hospital.city}</p>
-                    <p>
-                      📞 {hospital.phone || 'Phone not available'}
-                    </p>
-                    <p>
-                      🩺 {hospital.specialty || 'Specialty not added'}
-                    </p>
-
-                    <button
-                      type="button"
-                      onClick={() => startEditing(hospital)}
-                      style={{
-                        padding: '10px 18px',
-                        background: '#147de0',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        marginTop: '8px'
-                      }}
-                    >
-                      ✏️ Edit Hospital
-                    </button>
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
-
-          <hr style={{ margin: '30px 0' }} />
-
-          <button
-            type="button"
-            onClick={() => setPage('home')}
-            style={{
-              padding: '12px 20px',
-              background: '#147de0',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              marginRight: '10px'
-            }}
-          >
-            View Website
-          </button>
-
-          <button
-            type="button"
-            onClick={handleAdminLogout}
-            style={{
-              padding: '12px 20px',
-              background: '#dc2626',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }}
-          >
-            Logout
-          </button>
-        </div>
+                Cancel
+              </button>
+            </form>
+          )}
+        </main>
       </div>
     )
   }
 
-  // Public hospital search
-  const searchText = normalizeSearch(search)
-
-  const filteredHospitals = hospitals.filter(hospital => {
-    const hospitalDetails = normalizeSearch(
-      `${hospital.name} ${hospital.city} ${hospital.specialty || ''} ${hospital.address}`
-    )
-
-    if (!searchText) return true
-
-    return searchText.split(' ').every(word =>
-      hospitalDetails.includes(word)
-    )
-  })
-
   return (
     <div className="app">
-
-      {/* Navigation */}
       <nav className="navbar">
         <div className="brand">
-          <span className="brand-icon">✚</span>
-          HealthConnect <span>AI</span>
+          <h2>HealthConnect AI</h2>
         </div>
 
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '15px'
-        }}>
-          <a href="#hospitals">
-            Find Hospitals
-          </a>
+        <div className="nav-links">
+          <a href="#hospitals">Find Hospitals</a>
 
-          <button
-            type="button"
-            onClick={() => setPage('login')}
-            style={{
-              padding: '10px 16px',
-              background: '#147de0',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }}
-          >
+          <button onClick={() => setPage('patient-auth')}>
+            Patient Login
+          </button>
+
+          <button onClick={() => setPage('login')}>
             Admin Login
           </button>
         </div>
       </nav>
 
-      {/* Hero Section */}
-      <header className="hero-section">
-        <div className="hero-content">
-          <span className="tagline">
-            YOUR HEALTH, OUR PRIORITY
-          </span>
-
-          <h1>
-            Find the Right Hospital <span>Near You</span>
-          </h1>
-
+      <main>
+        <section className="hero">
+          <h1>Find the Right Hospital with HealthConnect AI</h1>
           <p>
-            Discover verified hospitals and healthcare services
-            with HealthConnect AI.
+            Search hospitals, explore specialties and find healthcare
+            services with voice assistance.
           </p>
 
-          <div className="search-box">
-            <span>🔍</span>
-
+          <div className="search-container">
             <input
               type="text"
-              placeholder="Search hospital, city or specialty..."
               value={search}
               onChange={event => setSearch(event.target.value)}
+              placeholder="Search hospitals, city or specialty..."
             />
 
             <select
               value={language}
               onChange={event => setLanguage(event.target.value)}
-              aria-label="Select voice search language"
             >
-              <option value="te-IN">తెలుగు</option>
+              <option value="te-IN">Telugu</option>
               <option value="en-IN">English</option>
+              <option value="hi-IN">Hindi</option>
             </select>
 
-            <button
-              type="button"
-              onClick={startVoiceSearch}
-              disabled={isListening}
-              title="Voice Search"
-              aria-label="Start voice search"
-              style={{
-                padding: '12px 16px',
-                border: 'none',
-                borderRadius: '8px',
-                background: isListening ? '#dc2626' : '#147de0',
-                color: 'white',
-                cursor: 'pointer',
-                fontSize: '18px'
-              }}
-            >
-              {isListening ? '🔴' : '🎤'}
+            <button onClick={startVoiceSearch} disabled={isListening}>
+              {isListening ? 'Listening...' : '🎤 Voice Search'}
             </button>
           </div>
 
-          {isListening && (
-            <p style={{
-              color: 'white',
-              marginTop: '12px'
-            }}>
-              Listening... Speak now.
-            </p>
-          )}
+          {voiceError && <p className="error-message">{voiceError}</p>}
+        </section>
 
-          {voiceError && (
-            <p style={{
-              color: '#ffe0e0',
-              marginTop: '12px'
-            }}>
-              {voiceError}
-            </p>
-          )}
-        </div>
-      </header>
+        <section id="hospitals" className="hospital-section">
+          <h2>Available Hospitals</h2>
 
-      {/* Hospital Directory */}
-      <main className="hospital-section" id="hospitals">
-        <div className="section-heading">
-          <div>
-            <span className="small-title">
-              HEALTHCARE DIRECTORY
-            </span>
+          {loading ? (
+            <p>Loading hospitals...</p>
+          ) : error ? (
+            <div>
+              <p className="error-message">{error}</p>
+              <button onClick={fetchHospitals}>Try Again</button>
+            </div>
+          ) : filteredHospitals.length === 0 ? (
+            <p>No hospitals found. Try another search.</p>
+          ) : (
+            <div className="hospital-list">
+              {filteredHospitals.map(hospital => (
+                <div className="hospital-card" key={hospital.id}>
+                  <h3>{hospital.name}</h3>
+                  <p>{hospital.address}</p>
+                  <p>{hospital.city}</p>
+                  <p>Specialty: {hospital.specialty || 'General'}</p>
 
-            <h2>Available Hospitals</h2>
-          </div>
-
-          <span className="hospital-count">
-            {filteredHospitals.length} Hospitals
-          </span>
-        </div>
-
-        {loading && (
-          <p>Loading hospitals...</p>
-        )}
-
-        {error && (
-          <p className="error">{error}</p>
-        )}
-
-        {!loading && !error && filteredHospitals.length === 0 && (
-          <p>No hospitals found. Try another search.</p>
-        )}
-
-        <div className="hospital-grid">
-          {filteredHospitals.map(hospital => (
-            <article
-              className="hospital-card"
-              key={hospital.id}
-            >
-              <div className="hospital-image">
-                🏥
-              </div>
-
-              <div className="hospital-info">
-                {hospital.is_verified && (
-                  <span className="verified">
-                    ✓ Verified Hospital
-                  </span>
-                )}
-
-                <h3>{hospital.name}</h3>
-
-                <p>📍 {hospital.address}</p>
-                <p>🏙️ {hospital.city}</p>
-
-                <p>
-                  🩺 {hospital.specialty || 'Specialty not listed'}
-                </p>
-
-                <p>
-                  📞 {hospital.phone || 'Phone unavailable'}
-                </p>
-
-                <button
-                  type="button"
-                  onClick={() => speakHospital(hospital)}
-                  style={{
-                    marginTop: '12px',
-                    padding: '10px 18px',
-                    border: 'none',
-                    borderRadius: '8px',
-                    background: '#e5f2ff',
-                    color: '#147de0',
-                    cursor: 'pointer',
-                    fontWeight: 'bold'
-                  }}
-                >
-                  {speakingId === hospital.id
-                    ? '🔊 Speaking...'
-                    : '🔊 Listen to Hospital Details'}
-                </button>
-
-                {speakingId === hospital.id && (
-                  <button
-                    type="button"
-                    onClick={stopSpeaking}
-                    style={{
-                      marginLeft: '8px',
-                      padding: '10px 18px',
-                      border: 'none',
-                      borderRadius: '8px',
-                      background: '#fee2e2',
-                      color: '#b91c1c',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    ⏹ Stop
-                  </button>
-                )}
-
-                <div className="hospital-actions">
-                  {hospital.phone ? (
-                    <a href={`tel:${hospital.phone}`}>
-                      📞 Call Hospital
-                    </a>
-                  ) : (
-                    <span>Phone unavailable</span>
+                  {hospital.phone && (
+                    <p>
+                      Phone:{' '}
+                      <a href={`tel:${hospital.phone}`}>
+                        {hospital.phone}
+                      </a>
+                    </p>
                   )}
 
-                  <a
-                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(hospital.address)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    📍 Directions
-                  </a>
+                  <div className="hospital-actions">
+                    <button onClick={() => speakHospital(hospital)}>
+                      {speakingId === hospital.id ? 'Speaking...' : '🔊 Listen'}
+                    </button>
+
+                    {speakingId === hospital.id && (
+                      <button onClick={stopSpeaking}>Stop</button>
+                    )}
+
+                    {hospital.latitude && hospital.longitude && (
+                      <a
+                        href={`https://www.google.com/maps/dir/?api=1&destination=${hospital.latitude},${hospital.longitude}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Get Directions
+                      </a>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </article>
-          ))}
-        </div>
+              ))}
+            </div>
+          )}
+        </section>
       </main>
 
-      {/* Footer */}
-      <footer>
-        <h3>HealthConnect AI</h3>
-        <p>Smart Healthcare. Better Lives.</p>
-        <p>© 2026 HealthConnect AI</p>
+      <footer className="footer">
+        <p>© {new Date().getFullYear()} HealthConnect AI. All rights reserved.</p>
       </footer>
     </div>
   )
